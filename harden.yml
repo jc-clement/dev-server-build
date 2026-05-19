@@ -1,0 +1,47 @@
+---
+- hosts: localhost
+  connection: local
+  become: true
+  tasks:
+    # single remote user
+    - name: Create user huey
+      user:
+        name: huey
+        shell: /bin/bash
+        groups: sudo
+        append: true
+        create_home: true
+        state: present
+
+    - name: Copy root SSH key to huey
+      authorized_key:
+        user: huey
+        key: "{{ lookup('file', '/root/.ssh/authorized_keys') }}"
+
+    - name: Disable root SSH login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin no'
+
+    - name: Restart SSH
+      service:
+        name: sshd
+        state: restarted
+
+    # ansible user - least privilege principle
+    - name: Create Ansible user
+      user:
+        name: ansible
+        shell: /bin/bash
+        groups: sudo
+        append: true
+        create_home: true
+        state: present
+
+    - name: Set up passwordless sudo for the ansible user
+      copy:
+        content: "ansible ALL=(ALL) NOPASSWD:ALL"
+        dest: "/etc/sudoers.d/ansible"
+        mode: '0440'
+        validate: '/usr/sbin/visudo -cf %s'
