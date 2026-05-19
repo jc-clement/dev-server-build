@@ -1,0 +1,55 @@
+---
+# harden-with-usg.yml
+# Requires Ubuntu Pro token in secrets file.
+#
+# If tailoring required (disable/modify rules for specific use-case)
+# use sudo usg generate-tailoring cis_level1_server tailor.xml
+# - modify tailor.xml
+# - update audit and fix parameters below to include --tailoring-file tailor.xml
+#
+# ** Runs audit ONLY **
+# ** After audit run, apply fixes: ansible-playbook harden-with-usg.yml --extra-vars "apply_fix=true"
+
+- hosts: localhost
+  connection: local
+  become: true
+
+  # contains: ubuntu_pro_token: "TOKEN"
+  vars_files:
+    - /etc/ansible/secrets/dev-server-build-secrets.yml
+
+  tasks:
+    - name: Attach Ubuntu Pro
+      command: pro attach {{ ubuntu_pro_token }}
+      args:
+        creates: /var/lib/ubuntu-advantage/machine-token.json
+        # creates: dempotent - won't run if already attached
+
+    - name: Enable USG
+      command: pro enable usg
+      args:
+        creates: /usr/bin/usg
+        # creates: idempotent - won't re-enable if usg binary exists
+
+    - name: Install USG package
+      apt:
+        name: usg
+        state: present
+        cache_valid_time: 3600
+        update_cache: true
+
+    - name: Run USG audit (review only, no changes)
+      command: usg audit cis_level1_server
+      register: usg_audit
+      changed_when: false
+      # changed_when: false - audit is not a system change
+
+    - name: Show audit results
+      debug:
+        var: usg_audit.stdout_lines
+
+    - name: Apply USG hardening
+      command: usg fix cis_level1_server
+      when: apply_fix | default(false)
+      # Applies hundreds of changes!
+      # ansible-playbook harden-with-usg.yml --extra-vars "apply_fix=true"
