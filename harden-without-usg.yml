@@ -1,0 +1,113 @@
+---
+# This playbook implements basic hardening for this portfolio server.
+#
+# For production w/o USG extend this playbook with additional measures, 
+# or use github.com/ansible-lockdown (maintained & comprehensive alternative)
+
+- hosts: localhost
+  connection: local
+  become: true
+
+  tasks:
+
+    # FIREWALL
+    - name: Install UFW
+      apt:
+        name: ufw
+        state: present
+        cache_valid_time: 3600
+        update_cache: true
+
+    - name: Deny incoming
+      ufw:
+        default: deny
+        direction: incoming
+
+    - name: Allow outgoing
+      ufw:
+        default: allow
+        direction: outgoing
+
+    - name: Allow SSH
+      ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+
+    - name: Allow HTTP w/ rate limit
+      ufw:
+        rule: limit
+        port: '80'
+        proto: tcp
+
+    - name: Allow HTTPS w/ rate limit
+      ufw:
+        rule: limit
+        port: '443'
+        proto: tcp
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    # SSH HARDENING
+    - name: Disable SSH Password auth
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+
+    - name: Disable SSH empty passwords
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitEmptyPasswords'
+        line: 'PermitEmptyPasswords no'
+
+    - name: Restart SSH
+      service:
+        name: sshd
+        state: restarted
+
+    # BRUTE FORCE PROTECTION
+    - name: Install Fail2Ban
+      apt:
+        name: fail2ban
+        state: present
+
+    - name: Enable & Start Fail2Ban
+      service:
+        name: fail2ban
+        state: started
+        enabled: true
+
+    # AUTO SECURITY UPDATES
+    - name: Install unattended-upgrades
+      apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Enable auto updates
+      lineinfile:
+        path: /etc/apt/apt.conf.d/20auto-upgrades
+        line: '{{ item }}'
+        create: true
+      loop:
+        - 'APT::Periodic::Update-Package-Lists "1";'
+        - 'APT::Periodic::Unattended-Upgrade "1";'
+
+    # DISABLE UNNEEDED SERVICES
+    - name: Disable avahi-daemon (network discovery)
+      service:
+        name: avahi-daemon
+        state: stopped
+        enabled: false
+      ignore_errors: true
+      # ignore_errors: may not be present on minimal install
+
+    - name: Disable CUPS (printing)
+      service:
+        name: cups
+        state: stopped
+        enabled: false
+      ignore_errors: true
+      # ignore_errors: may not be present
